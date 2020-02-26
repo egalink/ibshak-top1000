@@ -6,39 +6,35 @@ const api = 'https://api.mercadolibre.com'
 const category = { id: "MLM1055", name: "Celulares y Smartphones" }
 const sellerIds = [];
 
-const getUser = id => axios.get(`${api}/users/${id}`)
-const getBrand = attributes => attributes.filter(val => val.id == 'BRAND')
+const getUsers = id => axios.get(`${api}/users/${id}`)
+const getProds = nu => axios.get(`${api}/sites/MLM/search?category=${category.id}&sort=price_asc&offset=${nu}`)
+const getBrand = ar => ar.filter(val => val.id == 'BRAND')
 
-const getUserInfo = async ({ id }) => {
-
-    try {
-        const {data} = await getUser(id)
-        return data
-    } catch (error) {
-        return null
-    }
-
-}
-
-const genRequests = function * (offset = 0) {
+const genRequestProducts = function * (offset = 0) {
     //
     while (true) {
-        yield axios.get(`${api}/sites/MLM/search?category=${category.id}&sort=price_asc&offset=${offset}`)
+        yield getProds(offset)
         offset ++
     }
 }
 
-const promisifyFiftyRequests = () => {
+const promisifyFiftyProductRequests = () => {
     //
     let numRequests = 20; // 20 * 50 = 1000 (device results). 
     let promiseList = []
-    const phonelist = genRequests(0)
+    const phonelist = genRequestProducts(0)
 
     while (numRequests --) {
         promiseList.push(phonelist.next().value)
     }
 
     return Promise.all(promiseList)
+}
+
+const promisifyAllUserRequests = () => {
+    //
+    const requests = sellerIds.map(id => getUsers(id))
+    return Promise.all(requests)
 }
 
 const skeleton = async product => {
@@ -61,11 +57,6 @@ const skeleton = async product => {
         if (sellerIds.includes(sellerId) === false) {
             sellerIds.push(sellerId)
         }
-
-        /*let userinfo = await getUserInfo(product.seller)
-        if (userinfo) {
-            product_skeleton.sellerName = userinfo.hasOwnProperty('nickname') ? userinfo.nickname : null;
-        }//*/
 
         product_skeleton.sellerID = sellerId
     }
@@ -108,20 +99,47 @@ const models = (resource) => {
     return Promise.all(resource)
 }
 
+const processProductList = async () => {
+
+    // I can reduce the num of request made to mercado libre API:
+
+    // first, promisify all product requests to execute all-in-one <promise> request:
+    let response = (await promisifyFiftyProductRequests()).map(async ({ data }) => await models(data.results))
+        response = await Promise.all(response)
+    
+    // second. Request all seller userdata via sellers promosified array,
+    // the concept is the same, excecute all-in-one <promise> request:
+    let cSellers = (await promisifyAllUserRequests()).map(({ data }) => ({
+        id: data.id,
+        nickname: data.nickname
+    }))
+    
+    let flattend = _
+    
+        // flat array to a single level deep:
+        .flatten(response)
+        
+        .map(p => {
+            // append the corresponding seller to product model:
+            let seller = cSellers.filter(s => { return s.id == p.sellerID }).shift() || null
+            if (seller)
+                p.sellerName = seller.nickname
+            
+            return p
+        })
+
+    return { top: flattend, ids: cSellers } // to destructuring parameters handling...
+} 
+
 const get_phonelist = async (req, res) => {
     //
     try {
         
-        let response = (await promisifyFiftyRequests()).map(async ({ data }) => await models(data.results))
-            response = await Promise.all(response)
-        
-        // flat array to a single level deep:
-        let flattend = _.flatten(response)
-
+        const { top, ids } = await processProductList()
         return res.status(200).send({
             response: {
-                product_top: flattend,
-                sellers_ids: sellerIds
+                product_top: top,
+                sellers_ids: ids
             },
             success: true,
             error: {}
