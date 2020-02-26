@@ -3,15 +3,19 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "debug": "SET DEBUG=ibushak:* & npm start",
+    "debug-windows": "SET DEBUG=ibushak:* & SET PORT=8080 & npm start",
+    "debug": "SET DEBUG=ibushak:* & SET PORT=8080 & npm start",
     "start": "node ./bin/www"
   },
   "dependencies": {
+    "axios": "^0.19.2",
+    "body-parser": "^1.19.0",
     "cookie-parser": "~1.4.4",
     "debug": "~2.6.9",
     "ejs": "~2.6.1",
     "express": "~4.16.1",
     "http-errors": "~1.6.3",
+    "lodash": "^4.17.15",
     "morgan": "~1.9.1",
     "node-sass-middleware": "0.11.0"
   }
